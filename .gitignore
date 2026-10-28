@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+PolygonMigration/.env
+PolygonMigration/logs/
+PolygonMigration/staticfiles/
+.docker-data/
