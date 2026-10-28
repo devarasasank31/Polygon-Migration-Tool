@@ -244,14 +244,14 @@
                                 <input type="hidden" name="tags" value="{{ tag_name }}">
                             {% endfor %}
                         </div>
-                        <button class="btn btn-warning" type="submit">Create/Update problem in Database</button>
+                        <button class="btn btn-warning" type="submit">Migrate to Database</button>
                     </form>
 
                     <form method="post" style="display: inline;" id="migrate-azure-form">
                         {% csrf_token %}
                         <input type="hidden" name="problem_id" value="{{ problem_id }}">
-                        <input type="hidden" name="migrate_to_azure" value="1">
-                        <button class="btn btn-success {% if not db_problem %}disabled{% endif %}" type="submit" {% if not db_problem %}disabled data-bs-toggle="tooltip" data-bs-placement="top" title="Please migrate the problem to the database first."{% endif %}>Migrate Test Cases to Azure</button>
+                        <input type="hidden" name="upload_to_storage" value="1">
+                        <button class="btn btn-success {% if not db_problem %}disabled{% endif %}" type="submit" {% if not db_problem %}disabled data-bs-toggle="tooltip" data-bs-placement="top" title="Please migrate the problem to the database first."{% endif %}>Upload Test Cases to Cloud Storage ({{ storage_provider|upper }})</button>
                     </form>
                 </div>
                 
@@ -305,16 +305,21 @@
                     </div>
                 </div>
                 
+                {% else %}
+                <div class="data-section">
+                    <div class="alert alert-warning" role="alert">No test cases were returned for this problem.</div>
+                </div>
+                {% endif %}
+
                 <!-- Button after test cases -->
                 <div class="button-group">
                     <form method="post" style="display: inline;" id="migrate-test-cases-form">
                         {% csrf_token %}
                         <input type="hidden" name="problem_id" value="{{ problem_id }}">
                         <input type="hidden" name="migrate_test_cases_to_db" value="1">
-                        <button class="btn btn-success {% if not db_problem %}disabled{% endif %}" type="submit" {% if not db_problem %}disabled data-bs-toggle="tooltip" data-bs-placement="top" title="Please migrate the problem to the database first."{% endif %}>Migrate Test Description to Database</button>
+                        <button class="btn btn-success {% if not db_problem %}disabled{% endif %}" type="submit" {% if not db_problem %}disabled data-bs-toggle="tooltip" data-bs-placement="top" title="Please migrate the problem to the database first."{% endif %}>Migrate Test Cases to DB</button>
                     </form>
                 </div>
-                {% endif %}
                 
                 <div class="data-section">
                     <h3 style="position: relative;">Main Correct Solution (Test by submitting using this)
@@ -334,7 +339,7 @@
                         }
                         </script>
                     {% else %}
-                        <div class="alert alert-warning">Please migrate the problem to the database first.</div>
+                        <div class="alert alert-warning">No reference solution is available for this problem (or it could not be fetched).</div>
                     {% endif %}
                 </div>
             </div>
@@ -360,10 +365,12 @@
     </div>
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    {{ all_tags_json|json_script:"all-tags-data" }}
+    {{ selected_tags_json|json_script:"selected-tags-data" }}
     <script>
-    // Global variables
-    var allTags = {{ all_tags_json|safe }};
-    var selectedTags = new Set({{ selected_tags_json|safe }});
+    // Global variables (embedded via json_script to avoid XSS)
+    var allTags = JSON.parse(document.getElementById('all-tags-data').textContent);
+    var selectedTags = new Set(JSON.parse(document.getElementById('selected-tags-data').textContent));
     var searchInput, dropdown, selectedTagsSection, hiddenContainer;
     
     // Initialize the tags interface
@@ -410,6 +417,7 @@
                     return false;
                 }
                 updateHiddenInputs();
+                disableFormButtons(migrateForm);
                 showLoading('Migrating to database...');
             });
         }
@@ -420,6 +428,7 @@
             fetchForm.addEventListener('submit', function(e) {
                 // This is the fix for the original spinner problem
                 e.preventDefault(); 
+                disableFormButtons(fetchForm);
                 showLoading('Fetching problem data and test cases (may take 3-4 minutes)...');
                 setTimeout(() => fetchForm.submit(), 50);
             });
@@ -429,7 +438,8 @@
         var azureForm = document.getElementById('migrate-azure-form');
         if (azureForm) {
             azureForm.addEventListener('submit', function() {
-                showLoading('Migrating to Azure...');
+                disableFormButtons(azureForm);
+                showLoading('Uploading test cases to cloud storage...');
             });
         }
         
@@ -437,6 +447,7 @@
         var testCasesForm = document.getElementById('migrate-test-cases-form');
         if (testCasesForm) {
             testCasesForm.addEventListener('submit', function() {
+                disableFormButtons(testCasesForm);
                 showLoading('Migrating test cases to database...');
             });
         }
@@ -446,6 +457,14 @@
             hideLoading();
         {% endif %}
     });
+    
+    // Disable a form's buttons while its request is pending (prevents double submits)
+    function disableFormButtons(form) {
+        var buttons = form.querySelectorAll('button[type="submit"]');
+        for (var i = 0; i < buttons.length; i++) {
+            buttons[i].disabled = true;
+        }
+    }
     
     // Show loading overlay
     function showLoading(message) {
@@ -572,7 +591,16 @@
         selectedTags.forEach(function(tagName) {
             var tagElement = document.createElement('span');
             tagElement.className = 'selected-tag-item';
-            tagElement.innerHTML = tagName + '<span class="remove-tag" onclick="removeTag(\'' + tagName + '\')">&times;</span>';
+            // Build via DOM nodes (never innerHTML) so tag names cannot inject markup
+            tagElement.appendChild(document.createTextNode(tagName));
+            var remove = document.createElement('span');
+            remove.className = 'remove-tag';
+            remove.innerHTML = '&times;';
+            remove.setAttribute('role', 'button');
+            remove.setAttribute('tabindex', '0');
+            remove.setAttribute('aria-label', 'Remove tag ' + tagName);
+            remove.addEventListener('click', function() { removeTag(tagName); });
+            tagElement.appendChild(remove);
             selectedTagsSection.appendChild(tagElement);
         });
     }
