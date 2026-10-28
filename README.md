@@ -1,176 +1,208 @@
-# PolygonMigration
+# Polygon Migration Tool
+
+A Django-based internal tool for migrating problems and test cases from the
+[Polygon](https://polygon.codeforces.com) competitive-programming platform into a
+PostgreSQL database, with optional upload of test-case files to cloud object
+storage (MinIO by default, Azure Blob Storage optionally).
+
+## Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Requirements](#requirements)
+- [Local Setup](#local-setup)
+- [Configuration](#configuration)
+- [Running](#running)
+- [Running Tests](#running-tests)
+- [Project Structure](#project-structure)
+- [Documentation](#documentation)
 
 ## Overview
-PolygonMigration is a Django-based web application designed to facilitate the migration of programming problems and their test cases from the [Polygon](https://polygon.codeforces.com/) platform to a local database and Azure Blob Storage. It provides a user-friendly interface for staff users to fetch, review, tag, and migrate problems, as well as manage test cases and metadata.
 
-## Features
-- **Polygon Integration:** Fetch problems and test cases directly from Polygon using API keys.
-- **Database Migration:** Store problem statements, metadata, and test cases in a PostgreSQL database.
-- **Azure Blob Storage:** Upload test cases to Azure Blob Storage for scalable storage and retrieval.
-- **Tagging & Metadata:** Add, search, and manage tags and difficulty levels for each problem.
-- **Admin Interface:** Manage users, problems, tags, and test cases via Django admin.
-- **Custom User Model:** Email-based authentication with extended user profile fields.
-- **Staff-Only Access:** Only staff users can access migration features.
+Staff users authenticate locally (email + password on the custom user model)
+and provide Polygon API credentials per request (entered in the form or
+preconfigured via `POLYGON_API_KEY`/`POLYGON_API_SECRET` in the environment;
+form input takes precedence and is never persisted server-side). The tool
+then:
 
-## Workflow
-1. **Login:** Staff users log in via `/users/login/` using their email and password.
-2. **Fetch Problem:** Enter a Polygon Problem ID to fetch problem details and test cases.
-3. **Review & Tag:** Review the fetched problem, select difficulty, and add tags.
-4. **Migrate to Database:** Save the problem and metadata to the local database.
-5. **Migrate Test Cases:** Optionally, migrate test cases to the database and/or Azure Blob Storage.
-6. **View & Manage:** Use the admin interface for advanced management of problems, tags, and users.
+1. Fetches a problem from Polygon (info, statement package, tests,
+   reference solution, custom checker info) with a 30-minute Redis cache for
+   test cases.
+2. Persists the problem and its test cases into PostgreSQL.
+3. Uploads test-case files to the configured object storage using the object
+   naming convention:
+   - Test-case input: `test_cases/{problem_id}/{NN}`
+   - Test-case output: `test_cases/{problem_id}/{NN}.a`
+   where `{problem_id}` is the database primary key of the problem and `NN`
+   is the zero-padded (two-digit) test number, as in the original
+   Azure-targeted implementation.
 
-## Setup Instructions
-### 1. Prerequisites
-- Python 3.8+
-- PostgreSQL database
-- [Azure account](https://portal.azure.com/) with Blob Storage and an AAD application
-- Polygon API credentials
+The dashboard drives each operation through its own server-rendered form
+("Migrate to Database", "Migrate Test Cases to DB", "Upload Test Cases to
+Cloud Storage"), each with a client-side guard that disables the buttons
+while a submission is in flight.
 
-### 2. Clone the Repository
+## Architecture
+
+- **Framework**: Django 5.2, server-rendered templates (the migration page
+  posts form data and re-renders with results; there is no separate JSON
+  API).
+- **Database**: PostgreSQL (local Docker container by default, host port
+  `5433`; remapped from the default `5432` to avoid clashing with any
+  natively installed PostgreSQL).
+- **Cache**: Redis (local Docker container, port `6379`) caches fetched
+  Polygon test cases for 30 minutes.
+- **Object storage**: pluggable via `STORAGE_PROVIDER`
+  - `minio` (default) — any S3-compatible endpoint (MinIO locally, also
+    AWS S3 / Cloudflare R2), via boto3
+  - `azure` — Azure Blob Storage using AAD username/password credentials
+- **Polygon API client**: hand-rolled HMAC-signed JSON API client
+  (`problems/polygon_api.py`) implementing the documented `apiSig` signing
+  scheme, with timeouts, throttling, and bounded retries.
+
+## Requirements
+
+- Python 3.11+ (tested on 3.11.9)
+- Docker with the Compose plugin (for PostgreSQL, Redis, MinIO)
+- `pip` (for installing dependencies into a virtual environment)
+
+## Local Setup
+
+From the repository root:
+
 ```bash
-git clone <repo-url>
-cd Polygon-migration/PolygonMigration
-```
+# 1. Create and activate a virtual environment
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
 
-### 3. Create and Activate a Virtual Environment
-```bash
-python -m venv venv
-# On Windows:
-venv\Scripts\activate
-# On Unix/Mac:
-source venv/bin/activate
-```
+# 2. Install dependencies
+pip install -r requirement.txt
 
-### 4. Install Dependencies
-```bash
-pip install -r ../requirement.txt
-```
+# 3. Start PostgreSQL (host port 5433), Redis (6379) and MinIO (9000/9001)
+docker compose up -d
 
-### 5. Configure Environment Variables
-Copy `PolygonMigration/.env.example` to `PolygonMigration/.env`, beside `manage.py`, and configure the following variables:
-```env
-SECRET_KEY=your-django-secret-key
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1
+# 4. Configure the environment
+cp .env.example .env
+# edit .env: set SECRET_KEY, DB_*, MinIO credentials, SUPERUSER_* and
+# optionally POLYGON_API_KEY / POLYGON_API_SECRET for live API calls
 
-# Database
-DB_NAME=your_db_name
-DB_USER=your_db_user
-DB_PASSWORD=your_db_password
-DB_HOST=localhost
-DB_PORT=5432
-
-# Polygon API
-POLYGON_API_KEY=your_polygon_api_key
-POLYGON_API_SECRET=your_polygon_api_secret
-
-# Azure Blob Storage
-AZURE_STORAGE_ACCOUNT_URL=https://<your-storage-account>.blob.core.windows.net/
-AZURE_TENANT_ID=your-tenant-id
-AZURE_CLIENT_ID=your-client-id
-AZURE_USERNAME=your-azure-username
-AZURE_PASSWORD=your-azure-password
-AZURE_CONTAINER_NAME=your-container-name
-
-# Redis (optional, for caching)
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-REDIS_SSL=False
-```
-
-### 6. Database Setup
-- Ensure PostgreSQL is running.
-- **If you have not set up the database and user yet, follow these steps:**
-
-  1. Open a terminal and access the PostgreSQL prompt (you may need to enter your system password):
-     ```bash
-     psql -U postgres
-     ```
-  2. Create a new database (replace `your_db_name` with your desired database name):
-     ```sql
-     CREATE DATABASE your_db_name;
-     ```
-  3. Create a new user (replace `your_db_user` and `your_db_password` with your desired username and password):
-     ```sql
-     CREATE USER your_db_user WITH PASSWORD 'your_db_password';
-     ```
-  4. Grant all privileges on the new database to the new user:
-     ```sql
-     GRANT ALL PRIVILEGES ON DATABASE your_db_name TO your_db_user;
-     ```
-  5. Exit the PostgreSQL prompt:
-     ```sql
-     \q
-     ```
-
-- Update your `.env` file with the database name, user, and password you just created.
-- Run migrations:
-```bash
+# 5. Apply migrations
+cd PolygonMigration
 python manage.py migrate
-```
 
-### 7. Create a Superuser
-```bash
-python manage.py createsuperuser
-```
+# 6. Create the initial staff superuser (from SUPERUSER_* variables in .env)
+python manage.py create_staff_superuser
 
-### 8. Collect Static Files (for production)
-```bash
-python manage.py collectstatic
-```
-
-### 9. Run the Development Server
-```bash
+# 7. Run the development server
 python manage.py runserver
 ```
 
-Access the app at [http://localhost:8000/](http://localhost:8000/)
+Open <http://127.0.0.1:8000/> and sign in with the superuser email/password
+you configured (the app authenticates by email).
 
-## Usage
-- **Login:** Go to `/users/login/` and log in as a staff user.
-- **Main Interface:** Use the home page to fetch and migrate problems by Polygon ID.
-- **Admin Panel:** Access `/admin/` for advanced management.
-- **Migration:**
-  - Fetch a problem by Polygon ID.
-  - Select difficulty and tags.
-  - Migrate to the database.
-  - Migrate test cases to the database and/or Azure.
+## Configuration
 
-## Environment Variables Reference
-| Variable                  | Description                                 |
-|--------------------------|---------------------------------------------|
-| SECRET_KEY                | Django secret key                           |
-| DEBUG                     | Django debug mode (True/False)              |
-| ALLOWED_HOSTS             | Comma-separated allowed hosts               |
-| DB_NAME                   | PostgreSQL database name                    |
-| DB_USER                   | PostgreSQL user                             |
-| DB_PASSWORD               | PostgreSQL password                         |
-| DB_HOST                   | PostgreSQL host                             |
-| DB_PORT                   | PostgreSQL port                             |
-| POLYGON_API_KEY           | Polygon API key                             |
-| POLYGON_API_SECRET        | Polygon API secret                          |
-| AZURE_STORAGE_ACCOUNT_URL | Azure Blob Storage account URL              |
-| AZURE_TENANT_ID           | Azure AD tenant ID                          |
-| AZURE_CLIENT_ID           | Azure AD application client ID              |
-| AZURE_USERNAME            | Azure username                              |
-| AZURE_PASSWORD            | Azure password                              |
-| AZURE_CONTAINER_NAME      | Azure Blob container name                   |
-| REDIS_HOST                | Redis host (optional)                       |
-| REDIS_PORT                | Redis port (optional)                       |
-| REDIS_PASSWORD            | Redis password (optional)                   |
-| REDIS_SSL                 | Redis SSL (optional, True/False)            |
+All configuration is read from environment variables via `python-dotenv`
+(`settings.py` loads `.env` from `PolygonMigration/` first, then the
+repository root). See `.env.example` for the full annotated list:
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `SECRET_KEY` | Django secret key | insecure dev fallback (set your own) |
+| `DEBUG` | Debug mode | `False` |
+| `ALLOWED_HOSTS` | Comma-separated allowed hosts | `localhost,127.0.0.1` |
+| `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` | PostgreSQL connection | `polygon_migration` / `postgres` / `postgres` / `localhost` / `5432` (set `5433` for the Docker stack) |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` / `REDIS_SSL` | Redis connection | `localhost` / `6379` / — / `False` |
+| `POLYGON_API_KEY` / `POLYGON_API_SECRET` | Polygon credentials (per-request form input takes precedence) | unset |
+| `STORAGE_PROVIDER` | `minio` or `azure` | `minio` |
+| `MINIO_ENDPOINT` / `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` / `MINIO_BUCKET_NAME` / `MINIO_SECURE` | MinIO / S3 connection | `localhost:9000` / unset / unset / `testcases` / `False` |
+| `AZURE_STORAGE_ACCOUNT_URL` / `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_USERNAME` / `AZURE_PASSWORD` / `AZURE_CONTAINER_NAME` | Azure Blob Storage (AAD username/password app) | unset / `testcases` |
+| `SUPERUSER_EMAIL` / `SUPERUSER_PASSWORD` (+ optional `SUPERUSER_USERNAME`, `SUPERUSER_FIRST_NAME`, `SUPERUSER_LAST_NAME`, `SUPERUSER_CONTACT_NUMBER`, `SUPERUSER_COLLEGE`, `SUPERUSER_GRADUATION_YEAR`, `SUPERUSER_GENDER`) | Initial staff superuser for `create_staff_superuser` | unset |
+| `CUSTOM_CHECKER_DIR` | Directory for compiling custom checkers | system temp dir |
+
+Polygon credentials entered in the web form are used for that request only;
+the `POLYGON_API_KEY`/`POLYGON_API_SECRET` pair in the environment acts as a
+server-side default.
+
+## Running
+
+```bash
+cd PolygonMigration
+python manage.py runserver
+```
+
+Then open <http://127.0.0.1:8000/> and sign in. From the staff dashboard you
+can:
+
+- **Migrate to Database** – fetch a problem from Polygon, persist it with a
+  chosen difficulty and tags, and sync its sample test cases.
+- **Migrate Test Cases to DB** – persist the problem's full test set
+  (samples + regular tests), replacing any previously migrated rows for that
+  problem.
+- **Upload Test Cases to Cloud Storage** – push the problem's test cases to
+  the configured storage provider (MinIO or Azure), replacing previous files
+  for the problem; a custom checker, when present, is compiled and uploaded
+  alongside.
+
+## Running Tests
+
+Tests run against a dedicated PostgreSQL test database (the project is
+configured to refuse SQLite). Run from the `PolygonMigration/` directory:
+
+```bash
+cd PolygonMigration
+python manage.py test --noinput
+```
+
+Notes:
+
+- The suite covers the Polygon client (signing, error mapping, test
+  fetching), the storage providers (MinIO roundtrip is exercised against the
+  local container; the shared storage logic is exercised against an in-memory
+  provider), the migration services (including edge cases Q1–Q4 in
+  `ISSUES.md`), the view contract, and the auth flow.
+- Tests that need external services (Redis, MinIO) skip cleanly if the
+  service is not reachable, so the suite passes on a machine without Docker
+  as well.
+- Postgres, Redis, and MinIO must be running for the full suite (the
+  containerized `docker compose up -d` from [Local Setup](#local-setup) is
+  sufficient).
 
 ## Project Structure
+
 ```
-PolygonMigration/
-├── contents/         # Topic and content management
-├── problems/         # Polygon migration logic, models, views
-├── users/            # Custom user model and authentication
-├── static/           # Static files (CSS, JS, etc.)
-├── staticfiles/      # Collected static files (for production)
-├── logs/             # Log files
-├── manage.py         # Django management script
-├── PolygonMigration/ # Project settings and URLs
+Polygon-Migration-Tool/
+├── docker-compose.yml            # PostgreSQL (5433), Redis (6379), MinIO (9000/9001)
+├── .env.example                  # annotated configuration template
+├── requirement.txt               # pinned dependencies (Django, boto3, redis, …)
+├── IMPLEMENTATION_PLAN.md        # phased plan with acceptance criteria
+├── DOCUMENTATION.md              # full architecture & flow documentation
+├── ISSUES.md                     # issue log & edge-case reproduction guides
+├── docs/                         # original design documents and diagrams
+└── PolygonMigration/             # the Django project
+    ├── manage.py
+    ├── PolygonMigration/         # project: settings.py, urls.py, wsgi.py
+    ├── users/                    # custom user model, email auth, staff bootstrap
+    ├── problems/                 # core app
+    │   ├── polygon_api.py        # Polygon JSON API client (signing, cache, retries)
+    │   ├── storage.py            # storage interface + MinIO / Azure providers
+    │   ├── services.py           # migration/sync/upload business logic
+    │   ├── views.py              # staff-only migration page
+    │   ├── models.py             # Problem, SampleTestCase, ProblemTestCase, ProblemTag
+    │   ├── templates/            # index (dashboard), problem_list, …
+    │   └── tests/                # unit + integration tests
+    └── contents/                 # ancillary content app from the starter codebase
 ```
+
+## Documentation
+
+- [`DOCUMENTATION.md`](DOCUMENTATION.md) – architecture, data flow, and
+  per-flow documentation.
+- [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) – phased implementation
+  plan with acceptance criteria and status.
+- [`ISSUES.md`](ISSUES.md) – known issues and reproduction procedures for
+  the reported edge cases (Q1–Q4).
+- `docs/` – original design documents and diagrams from the project brief.
