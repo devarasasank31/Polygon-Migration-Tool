@@ -1,0 +1,50 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Django (runserver)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/PolygonMigration/manage.py",
+      "args": ["runserver", "127.0.0.1:8000"],
+      "django": true,
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/PolygonMigration"
+      },
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/PolygonMigration"
+    },
+    {
+      "name": "Python: Django Tests",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/PolygonMigration/manage.py",
+      "args": ["test", "--noinput"],
+      "django": true,
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/PolygonMigration"
+      },
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/PolygonMigration"
+    },
+    {
+      "name": "Python: Django Migrate",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/PolygonMigration/manage.py",
+      "args": ["migrate"],
+      "django": true,
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/PolygonMigration"
+      },
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/PolygonMigration"
+    }
+  ]
+}
