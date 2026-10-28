@@ -1,7 +1,35 @@
+# Python & virtual environment
 .venv/
+venv/
+env/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+
+# Environment files and credentials (keep .env.example tracked)
+.env
+.env.local
+.env.*.local
 PolygonMigration/.env
+*.env
+!*.env.example
+!.env.example
+
+# Django runtime files
+db.sqlite3
+db.sqlite3-journal
 PolygonMigration/logs/
+*.log
 PolygonMigration/staticfiles/
+staticfiles/
+
+# Test data & storage artifacts
+test_cases/
 .docker-data/
+
+# OS specific
+.DS_Store
+Thumbs.db

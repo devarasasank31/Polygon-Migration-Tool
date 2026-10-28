@@ -16,18 +16,24 @@ from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+# Load environment variables from .env in PolygonMigration directory or workspace root
+env_path = os.path.join(BASE_DIR, '.env')
+if not os.path.exists(env_path):
+    env_path = os.path.join(BASE_DIR.parent, '.env')
+load_dotenv(env_path)
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-polygon-migration-tool-default-key-change-in-prod")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'False') == 'True'
+DEBUG = os.getenv('DEBUG', 'False').strip().lower() in ('true', '1', 't')
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',')
+raw_allowed_hosts = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1')
+ALLOWED_HOSTS = [h.strip() for h in raw_allowed_hosts.split(',') if h.strip()]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -70,14 +76,21 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "PolygonMigration.wsgi.application"
 
+# PostgreSQL Database Configuration
+DB_NAME = os.getenv("DB_NAME", "polygon_migration")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "5432")
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME"),
-        "USER": os.getenv("DB_USER"),
-        "PASSWORD": os.getenv("DB_PASSWORD"),
-        "HOST": os.getenv("DB_HOST"),
-        "PORT": os.getenv("DB_PORT"),
+        "NAME": DB_NAME,
+        "USER": DB_USER,
+        "PASSWORD": DB_PASSWORD,
+        "HOST": DB_HOST,
+        "PORT": DB_PORT,
         "OPTIONS": {
             "client_encoding": "UTF8",
         },
@@ -121,23 +134,21 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Reduce session duration to 1 day
 SESSION_COOKIE_AGE = 86400
 
-POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
-POLYGON_API_SECRET = os.getenv("POLYGON_API_SECRET")
+POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "")
+POLYGON_API_SECRET = os.getenv("POLYGON_API_SECRET", "")
 
-if not POLYGON_API_KEY or not POLYGON_API_SECRET:
-    raise Exception("POLYGON_API_KEY and POLYGON_API_SECRET must be set in the .env file")
+AZURE_STORAGE_ACCOUNT_URL = os.getenv("AZURE_STORAGE_ACCOUNT_URL", "")
+AZURE_TENANT_ID = os.getenv("AZURE_TENANT_ID", "")
+AZURE_CLIENT_ID = os.getenv("AZURE_CLIENT_ID", "")
+AZURE_USERNAME = os.getenv("AZURE_USERNAME", "")
+AZURE_PASSWORD = os.getenv("AZURE_PASSWORD", "")
+AZURE_CONTAINER_NAME = os.getenv("AZURE_CONTAINER_NAME", "testcases")
 
-AZURE_STORAGE_ACCOUNT_URL = os.getenv("AZURE_STORAGE_ACCOUNT_URL")
-AZURE_TENANT_ID = os.getenv("AZURE_TENANT_ID")
-AZURE_CLIENT_ID = os.getenv("AZURE_CLIENT_ID")
-AZURE_USERNAME = os.getenv("AZURE_USERNAME")
-AZURE_PASSWORD = os.getenv("AZURE_PASSWORD")
-AZURE_CONTAINER_NAME = os.getenv("AZURE_CONTAINER_NAME")
-
-REDIS_HOST = os.getenv("REDIS_HOST")
-REDIS_PORT = os.getenv("REDIS_PORT")
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
-REDIS_SSL = os.getenv("REDIS_SSL", "False").strip().lower() == "true"
+# Redis configuration
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379") or 6379)
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD") or None
+REDIS_SSL = os.getenv("REDIS_SSL", "False").strip().lower() in ("true", "1", "t")
 
 LOGGING = {
     'version': 1,
