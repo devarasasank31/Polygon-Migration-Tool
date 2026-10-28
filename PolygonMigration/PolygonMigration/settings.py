@@ -137,12 +137,22 @@ SESSION_COOKIE_AGE = 86400
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "")
 POLYGON_API_SECRET = os.getenv("POLYGON_API_SECRET", "")
 
+# Cloud storage provider: 'minio' (S3-compatible) or 'azure'
+STORAGE_PROVIDER = os.getenv("STORAGE_PROVIDER", "minio").strip().lower()
+
 AZURE_STORAGE_ACCOUNT_URL = os.getenv("AZURE_STORAGE_ACCOUNT_URL", "")
 AZURE_TENANT_ID = os.getenv("AZURE_TENANT_ID", "")
 AZURE_CLIENT_ID = os.getenv("AZURE_CLIENT_ID", "")
 AZURE_USERNAME = os.getenv("AZURE_USERNAME", "")
 AZURE_PASSWORD = os.getenv("AZURE_PASSWORD", "")
 AZURE_CONTAINER_NAME = os.getenv("AZURE_CONTAINER_NAME", "testcases")
+
+# MinIO / S3-compatible storage
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "")
+MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME", "testcases")
+MINIO_SECURE = os.getenv("MINIO_SECURE", "False").strip().lower() in ("true", "1", "t")
 
 # Redis configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
